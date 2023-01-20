@@ -17,5 +17,8 @@ log="0.4.17"
 dotenv = "0.15.0"
 anyhow = "1.0.68"
 url="2.3.1"
+rand="0.8.5"
+base-encode="0.3.1"
+chrono="0.4.23"
 
 
