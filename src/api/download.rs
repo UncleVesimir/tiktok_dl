@@ -1,6 +1,19 @@
+#![allow(unused_imports)]
+
 use actix_web::{
     get, http::header, post, web, HttpRequest, HttpResponse, Responder, Result as awResult,
 };
+
+use reqwest::{Client, header::{
+    ACCEPT, 
+    ACCEPT_ENCODING,
+    ACCEPT_LANGUAGE,
+    ORIGIN,
+    REFERER,
+    USER_AGENT,
+    HeaderMap,
+}};
+
 use anyhow::{anyhow, Error};
 use base_encode;
 use chrono::Utc;
@@ -30,6 +43,8 @@ pub async fn download(form: web::Form<TikTokDLUrl>) -> awResult<impl Responder> 
 
     //gener
     let params = create_video_data_request_query_params();
+
+    let client = get_default_request_client();
     
     // url + params
     // perform head request with additional
@@ -94,6 +109,35 @@ pub async fn download(form: web::Form<TikTokDLUrl>) -> awResult<impl Responder> 
 
 //
 
+async fn get_default_request_client() -> Client {
+    let client = Client::new();
+    let head_map = HeaderMap::default();
+    head_map.insert(ACCEPT,"application/json, text/plain, */*");
+    head_map.insert(ACCEPT_ENCODING,"gzip");
+    head_map.insert(ACCEPT_LANGUAGE,"en-US,en;q=0.9");
+    head_map.insert(ORIGIN,"en-US,en;q=0.9");
+    head_map.insert(REFERER,"en-US,en;q=0.9");
+    head_map.insert(USER_AGENT,"en-US,en;q=0.9");
+
+    "authority": "m.tiktok.com",
+    "method": "GET",
+    "path": url.split("tiktok.com")[1],
+    "scheme": "https",
+    "accept": "application/json, text/plain, */*",//d
+    "accept-encoding": "gzip", //d
+    "accept-language": "en-US,en;q=0.9", //d
+    "origin": referrer, //d
+    "referer": referrer, //d
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "none",
+    "sec-gpc": "1",
+    "user-agent": "5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+    //d
+    "x-secsdk-csrf-token": csrf_token,
+    "x-tt-params": tt_params,
+}
+
 async fn validate_tiktok_url(url: &str) -> Result<Url, Error> {
     let parsed_url = Url::parse(url)?;
     let url_segments = parsed_url
@@ -115,7 +159,10 @@ async fn create_video_data_request_query_params() -> Result<(), Error> {
 #[derive(Serialize)]
 struct TikTokVideoDetailQueryParams<'a> {
     aid: usize,
-    itemId: &'a str,
+    #[serde(rename(serialize = "itemId"))]
+    item_id: &'a str,
+    verifyFp: &'a str,
+    //device_id: , _signature => emulate browser + use custom tt script to validate
     app_name: &'a str,
     device_platform: &'a str,
     region: &'a str,
@@ -139,14 +186,12 @@ struct TikTokVideoDetailQueryParams<'a> {
 }
 
 impl<'a> TikTokVideoDetailQueryParams<'a> {
-    fn new(itemId: &'a str) -> Self {
+    fn new(item_id: &'a str) -> Self {
         TikTokVideoDetailQueryParams {
             aid: 1988,
             app_name: "tiktok_web",
-            itemId: itemId,
-            verifyFp: self.generate_verifyfp_str(),
-            device_id: //some id,
-            _signature: //some browser sig
+            item_id,
+            verifyFp: "verify_khr3jabg_V7ucdslq_Vrw9_4KPb_AJ1b_Ks706M8zIJTq",
             device_platform: "web_mobile",
             region: "US",
             priority_region: "US",
@@ -194,23 +239,48 @@ impl<'a> TikTokVideoDetailQueryParams<'a> {
     }
 }
 
+
 struct TikTokVideoDetailHeaders<'a> {
-    "authority": "m.tiktok.com",
-    "method": "GET",
-    "path": url.split("tiktok.com")[1],
-    "scheme": "https",
-    "accept": "application/json, text/plain, */*",
-    "accept-encoding": "gzip",
-    "accept-language": "en-US,en;q=0.9",
-    "origin": referrer,
-    "referer": referrer,
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "none",
-    "sec-gpc": "1",
-    "user-agent": "5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
-    "x-secsdk-csrf-token": csrf_token,
-    "x-tt-params": tt_params,
+    authority: &'a str,
+    method: &'a str,
+    path: &'a str,
+    scheme: &'a str,
+    accept: &'a str,
+    accept_encoding: &'a str,
+    accept_language: &'a str,
+    origin: &'a str,
+    referer: &'a str,
+    sec_fetch_dest: &'a str,
+    sec_fetch_mode: &'a str,
+    sec_fetch_site: &'a str,
+    sec_gpc: &'a str,
+    user_agent: &'a str,
+    x_secsdk_csrf_token: &'a str,
+    x_tt_params: &'a str,
+}
+
+impl TikTokVideoDetailHeaders {
+    fn new(&self, url: &str) -> Self {
+        TikTokVideoDetailHeaders {
+            "authority": "m.tiktok.com",
+            "method": "GET",
+            "path": url.split("tiktok.com")[1],
+            "scheme": "https",
+            "accept": "application/json, text/plain, */*",//d
+            "accept-encoding": "gzip", //d
+            "accept-language": "en-US,en;q=0.9", //d
+            "origin": referrer, //d
+            "referer": referrer, //d
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "none",
+            "sec-gpc": "1",
+            "user-agent": "5.0 (iPhone; CPU iPhone OS 14_8 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1",
+            //d
+            "x-secsdk-csrf-token": csrf_token,
+            "x-tt-params": tt_params,
+        }
+    }
 }
 struct ErrorCodes<'a> {
     codes: HashMap<&'a str, &'a str>,
